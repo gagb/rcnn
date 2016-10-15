@@ -276,6 +276,48 @@ class Model(object):
         self.z = self.encoder.z
         self.z_pred = self.generator.z_pred
 
+    def save_model(self, path):
+        if not path.endswith(".pkl.gz"):
+            path = path + (".gz" if path.endswith(".pkl") else ".pkl.gz")
+
+        args = self.args
+        with gzip.open(path, "w") as fout:
+            pickle.dump(
+                {
+                    "args": args,
+                    "d"   : args.hidden_dim,
+                    "enc_params": self.encoder.params,
+                    "gen_params": self.generator.params 
+                },
+                fout,
+                protocol = pickle.HIGHEST_PROTOCOL
+            )
+
+    def load_model(self, path):
+        with gzip.open(path) as fin:
+            data = pickle.load(fin)
+        return data
+
+    def set_model(self, data):
+        self.args = data["args"]
+        #self.weights = data["weights"]
+        self.ready()
+        for l, p in zip(self.layers, data["params"]):
+            l.params = p
+    def load_model(self, path):
+        with gzip.open(path) as fin:
+            data = pickle.load(fin)
+        return data
+
+    def set_model(self, data):
+        self.args = data["args"]
+        #self.weights = data["weights"]
+        self.ready()
+        for l, p in zip(self.encoder.layers, data["enc_params"]):
+            l.params = p
+        for l, p in zip(self.generator.layers, data["gen_params"]):
+            l.params = p
+
     def train(self, train, dev, test, rationale_data):
         args = self.args
         dropout = self.dropout
@@ -535,16 +577,27 @@ class Model(object):
 
 def main():
     print args
-    assert args.embedding, "Pre-trained word embeddings required."
+    
+    embedding_layer = None
+    if args.embedding:
+        assert args.embedding, "Pre-trained word embeddings required."
 
-    embedding_layer = myio.create_embedding_layer(
-                        args.embedding
-                    )
+        embedding_layer = myio.create_embedding_layer(
+                            args.embedding
+                        )
+
 
     max_len = args.max_len
 
     if args.train:
         train_x, train_y = myio.read_annotations(args.train)
+        train_words = set([word for x in train_x for word in x])
+        embedding_layer = EmbeddingLayer(
+                n_d = args.hidden_dimension,
+                vocab = [ "<unk>", "<padding>" ] + list(train_words),
+                oov = "<unk>",
+                fix_init_embs = False
+            )
         train_x = [ embedding_layer.map_to_ids(x)[:max_len] for x in train_x ]
 
     if args.dev:
